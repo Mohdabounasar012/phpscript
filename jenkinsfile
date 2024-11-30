@@ -1,11 +1,53 @@
 pipeline {
     agent any
-
+    environment {
+        REMOTE_HOST = '104.155.185.197'
+        REMOTE_USER = 'nasar'
+        REMOTE_SSH_KEY = credentials('Nasar-pem')  // Assuming the key is stored in Jenkins credentials
+        REPO_URL = 'https://github.com/Mohdabounasar012/phpscript.git'
+        TARGET_DIR = '/var/www/html/sazer'  // Apache document root directory
+    }
+    
     stages {
-        stage('Deploy php website') {
+        stage('Checkout') {
             steps {
-                sshPublisher(publishers: [sshPublisherDesc(configName: 'Apache server', transfers: [sshTransfer(cleanRemote: false, excludes: '', execCommand: '', execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '/var/www/html/', remoteDirectorySDF: false, removePrefix: '', sourceFiles: '**/*.php')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
+                script {
+                    // Clone the Git repository
+                    git url: REPO_URL
+                }
             }
+        }
+
+        stage('Deploy to Apache Server') {
+            steps {
+                script {
+                    // Ensure the target directory exists on the remote server
+                    sh """
+                    ssh -o StrictHostKeyChecking=no -i ${REMOTE_SSH_KEY} ${REMOTE_USER}@${REMOTE_HOST} 'mkdir -p ${TARGET_DIR}'
+                    scp -o StrictHostKeyChecking=no -i ${REMOTE_SSH_KEY} -r ./* ${REMOTE_USER}@${REMOTE_HOST}:${TARGET_DIR}
+                    """
+                }
+            }
+        }
+        
+        stage('Restart Apache') {
+            steps {
+                script {
+                    // Restart Apache to load the new website
+                    sh """
+                    ssh -o StrictHostKeyChecking=no -i ${REMOTE_SSH_KEY} ${REMOTE_USER}@${REMOTE_HOST} 'sudo systemctl restart apache2'
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "Deployment to Apache server was successful!"
+        }
+        failure {
+            echo "Deployment failed."
         }
     }
 }
